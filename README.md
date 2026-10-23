@@ -103,9 +103,10 @@ WebSocket upgrade. For example, a client sends:
 ```
 
 The authenticated client receives a `chat_joined` response. Sending
-`{"op":"LOGOUT"}` over the authenticated socket revokes the session. Message
-routing and user-list operations are not implemented in this authentication
-change.
+`{"op":"LOGOUT"}` over the authenticated socket revokes the session. The
+browser client served at `/` sends messages with
+`{"op":"SEND_MESSAGE","message":"Hello"}` and displays messages broadcast to
+all authenticated connections. User-list operations are not implemented.
 
 ## Tests
 

@@ -100,6 +100,14 @@ test("health endpoint reports that the server is running", async () => {
   assert.deepEqual(await response.json(), { ok: true });
 });
 
+test("serves the chat client", async () => {
+  const response = await request("/");
+
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /Socket Chat/);
+  assert.match(response.headers.get("content-type"), /text\/html/);
+});
+
 test("registers a user and stores a salted password hash, not the password", async () => {
   const response = await postJson("/api/auth/register", {
     username: "Alice",
@@ -332,6 +340,34 @@ test("authenticated WebSocket clients may join the chat", async () => {
       event: "chat_joined",
       username: "alice",
     });
+  } finally {
+    socket.close();
+  }
+});
+
+test("authenticated WebSocket clients can send messages", async () => {
+  await postJson("/api/auth/register", {
+    username: "alice",
+    password: "correct-horse",
+  });
+  const cookie = await login();
+  const socket = await connectSocket(cookie);
+
+  try {
+    const responsePromise = receiveJson(socket);
+    socket.send(JSON.stringify({ op: "SEND_MESSAGE", message: " Hello " }));
+    const response = await responsePromise;
+    assert.deepEqual(
+      { ...response, sentAt: undefined },
+      {
+        ok: true,
+        event: "message",
+        username: "alice",
+        message: "Hello",
+        sentAt: undefined,
+      },
+    );
+    assert.match(response.sentAt, /^\d{4}-\d{2}-\d{2}T/);
   } finally {
     socket.close();
   }

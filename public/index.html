@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Socket Chat</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section id="auth-view" class="panel auth-panel">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">•••</span>
+          <div>
+            <p class="eyebrow">REAL-TIME CHAT</p>
+            <h1>Welcome back</h1>
+          </div>
+        </div>
+        <p class="intro">Sign in to join the protected chat room, or create an account to get started.</p>
+        <div class="auth-tabs" role="tablist" aria-label="Authentication">
+          <button class="tab active" type="button" data-mode="login">Log in</button>
+          <button class="tab" type="button" data-mode="register">Register</button>
+        </div>
+        <form id="auth-form">
+          <label for="username">Username</label>
+          <input id="username" name="username" autocomplete="username" minlength="3" maxlength="32" pattern="[A-Za-z0-9_]+" required>
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" minlength="8" required>
+          <button class="primary-button" type="submit"><span id="auth-submit-label">Log in</span><span aria-hidden="true">→</span></button>
+        </form>
+        <p id="auth-status" class="status" role="alert"></p>
+      </section>
+
+      <section id="chat-view" class="panel chat-panel hidden">
+        <header class="chat-header">
+          <div>
+            <p class="eyebrow">PROTECTED ROOM</p>
+            <h1>Socket Chat</h1>
+          </div>
+          <div class="header-actions">
+            <span id="connection-status" class="connection"><span class="status-dot"></span>Connecting</span>
+            <button id="logout-button" class="ghost-button" type="button">Log out</button>
+          </div>
+        </header>
+        <div id="messages" class="messages" aria-live="polite">
+          <div id="empty-state" class="empty-state">
+            <span class="empty-icon" aria-hidden="true">✦</span>
+            <strong>Your conversation starts here</strong>
+            <span>Send a message to everyone in the room.</span>
+          </div>
+        </div>
+        <form id="message-form" class="composer">
+          <label class="visually-hidden" for="message-input">Message</label>
+          <input id="message-input" maxlength="2000" placeholder="Write a message..." autocomplete="off" disabled required>
+          <button class="send-button" type="submit" aria-label="Send message" disabled>↑</button>
+        </form>
+        <p id="chat-status" class="status" role="alert"></p>
+      </section>
+    </main>
+    <script src="/client.js" defer></script>
+  </body>
+</html>

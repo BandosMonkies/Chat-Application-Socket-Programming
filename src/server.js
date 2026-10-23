@@ -11,6 +11,13 @@ const DEFAULT_PORT = Number(process.env.PORT ?? 8765);
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_SOCKET_FRAME_BYTES = 16 * 1024;
 const COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60;
+const PUBLIC_DIRECTORY = resolve(dirname(fileURLToPath(import.meta.url)), "..", "public");
+const STATIC_FILES = new Map([
+  ["/", { name: "index.html", type: "text/html; charset=utf-8" }],
+  ["/index.html", { name: "index.html", type: "text/html; charset=utf-8" }],
+  ["/styles.css", { name: "styles.css", type: "text/css; charset=utf-8" }],
+  ["/client.js", { name: "client.js", type: "text/javascript; charset=utf-8" }],
+]);
 
 export class JsonAccountStore {
   constructor(filePath) {
@@ -191,12 +198,41 @@ function getSessionFromRequest(request, authService) {
   return authService.getSession(readCookie(request, SESSION_COOKIE));
 }
 
+async function serveStaticFile(url, response) {
+  const file = STATIC_FILES.get(url.pathname);
+  if (!file) {
+    return false;
+  }
+
+  try {
+    const contents = await readFile(resolve(PUBLIC_DIRECTORY, file.name));
+    response.writeHead(200, {
+      "Content-Type": file.type,
+      "Cache-Control": "no-cache",
+      "X-Content-Type-Options": "nosniff",
+    });
+    response.end(contents);
+  } catch (error) {
+    console.error("Static client could not be served:", error);
+    sendJson(response, 500, {
+      ok: false,
+      error: "The client could not be served.",
+    });
+  }
+
+  return true;
+}
+
 async function handleHttpRequest(
   request,
   response,
   { authService, secureCookies },
 ) {
   const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
+
+  if (request.method === "GET" && (await serveStaticFile(url, response))) {
+    return;
+  }
 
   if (request.method === "GET" && url.pathname === "/health") {
     sendJson(response, 200, { ok: true });
@@ -286,7 +322,7 @@ async function handleHttpRequest(
   }
 }
 
-function parseSocketRequest(socket, raw, authService) {
+function parseSocketRequest(socket, raw, authService, webSocketServer) {
   const currentSession = authService.getSession(socket.chatSessionToken);
   if (!currentSession || currentSession.key !== socket.chatSession.key) {
     socket.send(JSON.stringify({ ok: false, error: "Authentication required." }));
@@ -353,7 +389,37 @@ function parseSocketRequest(socket, raw, authService) {
     return;
   }
 
-  if (operation === "SEND_MESSAGE" || operation === "USER_LIST") {
+  if (operation === "SEND_MESSAGE") {
+    if (typeof request.message !== "string" || request.message.trim().length === 0) {
+      socket.send(JSON.stringify({ ok: false, error: "Message cannot be empty." }));
+      return;
+    }
+
+    const message = request.message.trim();
+    if (message.length > 2000) {
+      socket.send(
+        JSON.stringify({ ok: false, error: "Message must be 2000 characters or fewer." }),
+      );
+      return;
+    }
+
+    const payload = JSON.stringify({
+      ok: true,
+      event: "message",
+      username: socket.chatSession.username,
+      message,
+      sentAt: new Date().toISOString(),
+    });
+
+    for (const client of webSocketServer.clients) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(payload);
+      }
+    }
+    return;
+  }
+
+  if (operation === "USER_LIST") {
     socket.send(
       JSON.stringify({
         ok: false,
@@ -407,7 +473,7 @@ export function createAppServer({
 
   webSocketServer.on("connection", (socket) => {
     socket.on("message", (raw) => {
-      parseSocketRequest(socket, raw, authService);
+      parseSocketRequest(socket, raw, authService, webSocketServer);
     });
   });
 
