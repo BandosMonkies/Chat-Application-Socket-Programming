@@ -412,7 +412,10 @@ function parseSocketRequest(socket, raw, authService, webSocketServer) {
     });
 
     for (const client of webSocketServer.clients) {
-      if (client.readyState === WebSocket.OPEN) {
+      if (
+        client.readyState === WebSocket.OPEN &&
+        authService.getSession(client.chatSessionToken)
+      ) {
         client.send(payload);
       }
     }
