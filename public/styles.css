@@ -47,6 +47,7 @@ input:focus { border-color: #78a9ff; box-shadow: 0 0 0 3px rgba(120, 169, 255, .
 .message-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
 .composer { display: flex; gap: 10px; padding: 18px 30px 2px; border-top: 1px solid #2b3a58; }
 .composer input { flex: 1; }
+.composer input:first-of-type { flex: 0 1 190px; }
 .send-button { width: 48px; border-radius: 9px; font-size: 22px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 @media (max-width: 540px) { .auth-panel { padding: 28px 22px; } .chat-header, .messages, .composer { padding-left: 18px; padding-right: 18px; } .chat-header { align-items: flex-start; gap: 12px; } .header-actions { flex-direction: column-reverse; align-items: flex-end; gap: 8px; } }

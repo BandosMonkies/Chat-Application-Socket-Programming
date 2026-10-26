@@ -345,9 +345,13 @@ test("authenticated WebSocket clients may join the chat", async () => {
   }
 });
 
-test("authenticated WebSocket clients can send messages", async () => {
+test("authenticated WebSocket clients can send messages to selected recipients", async () => {
   await postJson("/api/auth/register", {
     username: "alice",
+    password: "correct-horse",
+  });
+  await postJson("/api/auth/register", {
+    username: "bob",
     password: "correct-horse",
   });
   const cookie = await login();
@@ -355,7 +359,13 @@ test("authenticated WebSocket clients can send messages", async () => {
 
   try {
     const responsePromise = receiveJson(socket);
-    socket.send(JSON.stringify({ op: "SEND_MESSAGE", message: " Hello " }));
+    socket.send(
+      JSON.stringify({
+        op: "SEND_MESSAGE",
+        recipients: ["BOB", "bob"],
+        message: " Hello ",
+      }),
+    );
     const response = await responsePromise;
     assert.deepEqual(
       { ...response, sentAt: undefined },
@@ -363,11 +373,77 @@ test("authenticated WebSocket clients can send messages", async () => {
         ok: true,
         event: "message",
         username: "alice",
+        recipients: ["bob"],
         message: "Hello",
         sentAt: undefined,
       },
     );
     assert.match(response.sentAt, /^\d{4}-\d{2}-\d{2}T/);
+  } finally {
+    socket.close();
+  }
+});
+
+test("routes messages only to the sender and intended recipients", async () => {
+  for (const username of ["alice", "bob", "charlie"]) {
+    await postJson("/api/auth/register", {
+      username,
+      password: "correct-horse",
+    });
+  }
+
+  const alice = await connectSocket(await login("alice"));
+  const bob = await connectSocket(await login("bob"));
+  const charlie = await connectSocket(await login("charlie"));
+
+  try {
+    const aliceMessage = receiveJson(alice);
+    const bobMessage = receiveJson(bob);
+    const charlieMessage = receiveJson(charlie);
+    alice.send(
+      JSON.stringify({
+        op: "SEND_MESSAGE",
+        recipients: ["bob"],
+        message: "Private hello",
+      }),
+    );
+
+    assert.equal((await aliceMessage).message, "Private hello");
+    const response = await bobMessage;
+    assert.equal(response.username, "alice");
+    assert.deepEqual(response.recipients, ["bob"]);
+    assert.equal(response.message, "Private hello");
+    assert.match(response.sentAt, /^\d{4}-\d{2}-\d{2}T/);
+    await assert.rejects(
+      Promise.race([
+        charlieMessage,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("not delivered")), 100),
+        ),
+      ]),
+      /not delivered/,
+    );
+  } finally {
+    alice.close();
+    bob.close();
+    charlie.close();
+  }
+});
+
+test("rejects messages without valid recipients", async () => {
+  await postJson("/api/auth/register", {
+    username: "alice",
+    password: "correct-horse",
+  });
+  const socket = await connectSocket(await login());
+
+  try {
+    const responsePromise = receiveJson(socket);
+    socket.send(JSON.stringify({ op: "SEND_MESSAGE", message: "Hello" }));
+    assert.deepEqual(await responsePromise, {
+      ok: false,
+      error: "At least one recipient is required.",
+    });
   } finally {
     socket.close();
   }
@@ -383,11 +459,15 @@ test("sequential messages have chronological timestamps and preserve order", asy
 
   try {
     const firstResponsePromise = receiveJson(socket);
-    socket.send(JSON.stringify({ op: "SEND_MESSAGE", message: "First" }));
+    socket.send(
+      JSON.stringify({ op: "SEND_MESSAGE", recipients: ["alice"], message: "First" }),
+    );
     const firstResponse = await firstResponsePromise;
 
     const secondResponsePromise = receiveJson(socket);
-    socket.send(JSON.stringify({ op: "SEND_MESSAGE", message: "Second" }));
+    socket.send(
+      JSON.stringify({ op: "SEND_MESSAGE", recipients: ["alice"], message: "Second" }),
+    );
     const secondResponse = await secondResponsePromise;
 
     assert.equal(firstResponse.message, "First");
