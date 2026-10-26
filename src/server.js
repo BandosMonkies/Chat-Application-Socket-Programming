@@ -4,7 +4,12 @@ import { randomBytes } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
-import { AuthError, AuthService, SESSION_COOKIE } from "./auth.js";
+import {
+  AuthError,
+  AuthService,
+  SESSION_COOKIE,
+  normalizeUsername,
+} from "./auth.js";
 
 const DEFAULT_HOST = process.env.HOST ?? "127.0.0.1";
 const DEFAULT_PORT = Number(process.env.PORT ?? 8765);
@@ -409,10 +414,42 @@ function parseSocketRequest(
       return;
     }
 
+    if (!Array.isArray(request.recipients) || request.recipients.length === 0) {
+      socket.send(
+        JSON.stringify({
+          ok: false,
+          error: "At least one recipient is required.",
+        }),
+      );
+      return;
+    }
+
+    const recipients = [];
+    try {
+      for (const recipient of request.recipients) {
+        const username = normalizeUsername(recipient);
+        if (!recipients.includes(username)) {
+          recipients.push(username);
+        }
+      }
+    } catch (error) {
+      socket.send(
+        JSON.stringify({
+          ok: false,
+          error:
+            error instanceof AuthError
+              ? error.message
+              : "Recipients must be valid usernames.",
+        }),
+      );
+      return;
+    }
+
     const payload = JSON.stringify({
       ok: true,
       event: "message",
       username: socket.chatSession.username,
+      recipients,
       message,
       sentAt: nextMessageTimestamp(),
     });
@@ -420,7 +457,9 @@ function parseSocketRequest(
     for (const client of webSocketServer.clients) {
       if (
         client.readyState === WebSocket.OPEN &&
-        authService.getSession(client.chatSessionToken)
+        authService.getSession(client.chatSessionToken) &&
+        (client === socket ||
+          recipients.includes(client.chatSession.username))
       ) {
         client.send(payload);
       }

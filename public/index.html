@@ -50,6 +50,8 @@
           </div>
         </div>
         <form id="message-form" class="composer">
+          <label class="visually-hidden" for="recipient-input">Recipients</label>
+          <input id="recipient-input" placeholder="Recipients (comma-separated)" autocomplete="off" disabled required>
           <label class="visually-hidden" for="message-input">Message</label>
           <input id="message-input" maxlength="2000" placeholder="Write a message..." autocomplete="off" disabled required>
           <button class="send-button" type="submit" aria-label="Send message" disabled>↑</button>
