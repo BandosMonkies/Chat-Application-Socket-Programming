@@ -322,7 +322,13 @@ async function handleHttpRequest(
   }
 }
 
-function parseSocketRequest(socket, raw, authService, webSocketServer) {
+function parseSocketRequest(
+  socket,
+  raw,
+  authService,
+  webSocketServer,
+  nextMessageTimestamp,
+) {
   const currentSession = authService.getSession(socket.chatSessionToken);
   if (!currentSession || currentSession.key !== socket.chatSession.key) {
     socket.send(JSON.stringify({ ok: false, error: "Authentication required." }));
@@ -408,7 +414,7 @@ function parseSocketRequest(socket, raw, authService, webSocketServer) {
       event: "message",
       username: socket.chatSession.username,
       message,
-      sentAt: new Date().toISOString(),
+      sentAt: nextMessageTimestamp(),
     });
 
     for (const client of webSocketServer.clients) {
@@ -451,6 +457,12 @@ export function createAppServer({
     noServer: true,
     maxPayload: MAX_SOCKET_FRAME_BYTES,
   });
+  let lastMessageTimestamp = 0;
+  const nextMessageTimestamp = () => {
+    const now = Date.now();
+    lastMessageTimestamp = Math.max(now, lastMessageTimestamp + 1);
+    return new Date(lastMessageTimestamp).toISOString();
+  };
 
   httpServer.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
@@ -476,7 +488,13 @@ export function createAppServer({
 
   webSocketServer.on("connection", (socket) => {
     socket.on("message", (raw) => {
-      parseSocketRequest(socket, raw, authService, webSocketServer);
+      parseSocketRequest(
+        socket,
+        raw,
+        authService,
+        webSocketServer,
+        nextMessageTimestamp,
+      );
     });
   });
 

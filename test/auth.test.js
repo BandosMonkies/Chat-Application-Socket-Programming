@@ -373,6 +373,33 @@ test("authenticated WebSocket clients can send messages", async () => {
   }
 });
 
+test("sequential messages have chronological timestamps and preserve order", async () => {
+  await postJson("/api/auth/register", {
+    username: "alice",
+    password: "correct-horse",
+  });
+  const cookie = await login();
+  const socket = await connectSocket(cookie);
+
+  try {
+    const firstResponsePromise = receiveJson(socket);
+    socket.send(JSON.stringify({ op: "SEND_MESSAGE", message: "First" }));
+    const firstResponse = await firstResponsePromise;
+
+    const secondResponsePromise = receiveJson(socket);
+    socket.send(JSON.stringify({ op: "SEND_MESSAGE", message: "Second" }));
+    const secondResponse = await secondResponsePromise;
+
+    assert.equal(firstResponse.message, "First");
+    assert.equal(secondResponse.message, "Second");
+    assert.ok(
+      Date.parse(firstResponse.sentAt) < Date.parse(secondResponse.sentAt),
+    );
+  } finally {
+    socket.close();
+  }
+});
+
 test("logout revokes the session, expires the cookie, and closes its sockets", async () => {
   await postJson("/api/auth/register", {
     username: "alice",
