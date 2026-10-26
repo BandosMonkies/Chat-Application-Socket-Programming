@@ -30,6 +30,16 @@ function setComposerEnabled(enabled) {
   sendButton.disabled = !enabled;
 }
 
+function formatMessageTime(sentAt) {
+  const timestamp = new Date(sentAt);
+  if (Number.isNaN(timestamp.getTime())) return "Unknown time";
+  return timestamp.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 function addMessage(message) {
   emptyState?.remove();
   const item = document.createElement("article");
@@ -37,11 +47,24 @@ function addMessage(message) {
   const author = document.createElement("div");
   author.className = "message-meta";
   author.textContent = message.username === username ? "You" : message.username;
+  const timestamp = document.createElement("time");
+  timestamp.className = "message-time";
+  timestamp.dateTime = message.sentAt;
+  timestamp.textContent = formatMessageTime(message.sentAt);
   const body = document.createElement("div");
   body.className = "message-body";
   body.textContent = message.message;
+  author.append(timestamp);
   item.append(author, body);
-  messages.append(item);
+
+  const messageItems = [...messages.querySelectorAll(".message")];
+  const nextItem = messageItems.find(
+    (existingItem) =>
+      new Date(existingItem.dataset.sentAt).getTime() >
+      new Date(message.sentAt).getTime(),
+  );
+  item.dataset.sentAt = message.sentAt;
+  messages.insertBefore(item, nextItem ?? null);
   messages.scrollTop = messages.scrollHeight;
 }
 
