@@ -120,6 +120,9 @@ npm test
 npm run test:coverage
 ```
 
+The Sprint 1 execution environment, results, and requirement-to-test mapping
+are recorded in [the Sprint 1 test execution report](./docs/sprint-1-test-execution.md).
+
 ## Project planning
 
 The team backlog, Sprint 1 and Sprint 2 work, story-point estimates, and
