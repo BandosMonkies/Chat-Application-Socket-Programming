@@ -26,8 +26,8 @@ recipient routing, and user presence.
 npm ci
 ```
 
-For first-time installation, use `npm install` if a package lock has not yet
-been created.
+Requires Node.js 20 or newer and npm. The `ws` package is the only runtime
+dependency; HTTP, cryptography, file storage, and testing use Node.js built-ins.
 
 ## Run
 
@@ -105,11 +105,15 @@ WebSocket upgrade. For example, a client sends:
 The authenticated client receives a `chat_joined` response followed by a
 `user_list` event containing the sorted usernames currently in the room.
 Connected clients receive `user_joined` and `user_left` events when a user
-enters or leaves, followed by an updated `user_list`. Sending
-`{"op":"LOGOUT"}` over the authenticated socket revokes the session. The
-browser client served at `/` sends messages with
-`{"op":"SEND_MESSAGE","message":"Hello"}` and displays messages broadcast to
-all authenticated connections. User-list operations are not implemented.
+enters or leaves, followed by an updated `user_list`. The `USER_LIST`
+operation returns the current list. Sending `{"op":"LOGOUT"}` over the
+authenticated socket revokes the session. A message request has the shape
+`{"op":"SEND_MESSAGE","recipients":["bob"],"message":"Hello"}`. The server
+delivers it to the sender and connected authenticated recipients; recipient
+names are case-insensitive, duplicates are removed, and at least one valid
+recipient is required. Messages include an ISO timestamp. Binary WebSocket
+frames are not part of the text protocol, and malformed requests are rejected.
+No administrative user-management endpoint is exposed.
 
 ## Tests
 
@@ -126,3 +130,9 @@ are recorded in [the Sprint 1 test execution report](./docs/sprint-1-test-execut
 The team backlog, Sprint 1 and Sprint 2 work, story-point estimates, and
 acceptance criteria are tracked in the [GitHub Project](https://github.com/users/BandosMonkies/projects/3)
 and the repository's GitHub Issues. Estimates should be reviewed by the team.
+
+## Phase 2 documentation
+
+The implementation differences, rationale, setup details, and requirement
+traceability are recorded in
+[the phase-2 implementation addendum](./docs/phase-2-implementation-addendum.md).
