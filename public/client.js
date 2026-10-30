@@ -8,6 +8,7 @@ const connectionStatus = document.querySelector("#connection-status");
 const messages = document.querySelector("#messages");
 const emptyState = document.querySelector("#empty-state");
 const messageForm = document.querySelector("#message-form");
+const recipientInput = document.querySelector("#recipient-input");
 const messageInput = document.querySelector("#message-input");
 const sendButton = document.querySelector(".send-button");
 const logoutButton = document.querySelector("#logout-button");
@@ -28,8 +29,19 @@ function setConnectionState(label, state) {
 }
 
 function setComposerEnabled(enabled) {
+  recipientInput.disabled = !enabled;
   messageInput.disabled = !enabled;
   sendButton.disabled = !enabled;
+}
+
+function formatMessageTime(sentAt) {
+  const timestamp = new Date(sentAt);
+  if (Number.isNaN(timestamp.getTime())) return "Unknown time";
+  return timestamp.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function addMessage(message) {
@@ -39,11 +51,24 @@ function addMessage(message) {
   const author = document.createElement("div");
   author.className = "message-meta";
   author.textContent = message.username === username ? "You" : message.username;
+  const timestamp = document.createElement("time");
+  timestamp.className = "message-time";
+  timestamp.dateTime = message.sentAt;
+  timestamp.textContent = formatMessageTime(message.sentAt);
   const body = document.createElement("div");
   body.className = "message-body";
   body.textContent = message.message;
+  author.append(timestamp);
   item.append(author, body);
-  messages.append(item);
+
+  const messageItems = [...messages.querySelectorAll(".message")];
+  const nextItem = messageItems.find(
+    (existingItem) =>
+      new Date(existingItem.dataset.sentAt).getTime() >
+      new Date(message.sentAt).getTime(),
+  );
+  item.dataset.sentAt = message.sentAt;
+  messages.insertBefore(item, nextItem ?? null);
   messages.scrollTop = messages.scrollHeight;
 }
 
@@ -158,8 +183,12 @@ authForm.addEventListener("submit", submitAuth);
 messageForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const message = messageInput.value.trim();
-  if (!message || socket?.readyState !== WebSocket.OPEN) return;
-  socket.send(JSON.stringify({ op: "SEND_MESSAGE", message }));
+  const recipients = recipientInput.value
+    .split(",")
+    .map((recipient) => recipient.trim().toLowerCase())
+    .filter(Boolean);
+  if (!message || recipients.length === 0 || socket?.readyState !== WebSocket.OPEN) return;
+  socket.send(JSON.stringify({ op: "SEND_MESSAGE", recipients, message }));
   messageInput.value = "";
 });
 logoutButton.addEventListener("click", () => {

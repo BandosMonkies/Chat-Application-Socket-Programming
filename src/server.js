@@ -4,7 +4,12 @@ import { randomBytes } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
-import { AuthError, AuthService, SESSION_COOKIE } from "./auth.js";
+import {
+  AuthError,
+  AuthService,
+  SESSION_COOKIE,
+  normalizeUsername,
+} from "./auth.js";
 
 const DEFAULT_HOST = process.env.HOST ?? "127.0.0.1";
 const DEFAULT_PORT = Number(process.env.PORT ?? 8765);
@@ -322,7 +327,13 @@ async function handleHttpRequest(
   }
 }
 
-function parseSocketRequest(socket, raw, authService, webSocketServer) {
+function parseSocketRequest(
+  socket,
+  raw,
+  authService,
+  webSocketServer,
+  nextMessageTimestamp,
+) {
   const currentSession = authService.getSession(socket.chatSessionToken);
   if (!currentSession || currentSession.key !== socket.chatSession.key) {
     socket.send(JSON.stringify({ ok: false, error: "Authentication required." }));
@@ -439,16 +450,53 @@ function parseSocketRequest(socket, raw, authService, webSocketServer) {
       return;
     }
 
+    if (!Array.isArray(request.recipients) || request.recipients.length === 0) {
+      socket.send(
+        JSON.stringify({
+          ok: false,
+          error: "At least one recipient is required.",
+        }),
+      );
+      return;
+    }
+
+    const recipients = [];
+    try {
+      for (const recipient of request.recipients) {
+        const username = normalizeUsername(recipient);
+        if (!recipients.includes(username)) {
+          recipients.push(username);
+        }
+      }
+    } catch (error) {
+      socket.send(
+        JSON.stringify({
+          ok: false,
+          error:
+            error instanceof AuthError
+              ? error.message
+              : "Recipients must be valid usernames.",
+        }),
+      );
+      return;
+    }
+
     const payload = JSON.stringify({
       ok: true,
       event: "message",
       username: socket.chatSession.username,
+      recipients,
       message,
-      sentAt: new Date().toISOString(),
+      sentAt: nextMessageTimestamp(),
     });
 
     for (const client of webSocketServer.clients) {
-      if (client.readyState === WebSocket.OPEN) {
+      if (
+        client.readyState === WebSocket.OPEN &&
+        authService.getSession(client.chatSessionToken) &&
+        (client === socket ||
+          recipients.includes(client.chatSession.username))
+      ) {
         client.send(payload);
       }
     }
@@ -546,6 +594,12 @@ export function createAppServer({
     noServer: true,
     maxPayload: MAX_SOCKET_FRAME_BYTES,
   });
+  let lastMessageTimestamp = 0;
+  const nextMessageTimestamp = () => {
+    const now = Date.now();
+    lastMessageTimestamp = Math.max(now, lastMessageTimestamp + 1);
+    return new Date(lastMessageTimestamp).toISOString();
+  };
 
   httpServer.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
@@ -571,7 +625,13 @@ export function createAppServer({
 
   webSocketServer.on("connection", (socket) => {
     socket.on("message", (raw) => {
-      parseSocketRequest(socket, raw, authService, webSocketServer);
+      parseSocketRequest(
+        socket,
+        raw,
+        authService,
+        webSocketServer,
+        nextMessageTimestamp,
+      );
     });
     socket.once("close", () => {
       removeSocketFromChat(socket, webSocketServer);

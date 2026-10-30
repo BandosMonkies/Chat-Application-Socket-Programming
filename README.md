@@ -1,8 +1,8 @@
 # Real-Time Chat Application
 
 A Node.js chat application using WebSockets. The server owns account data,
-authentication, sessions, protected chat connections, message delivery, and
-user presence.
+authentication, sessions, protected chat connections, message delivery,
+recipient routing, and user presence.
 
 ## Stack and protocol
 
@@ -99,7 +99,7 @@ login. The server rejects a missing, expired, or revoked session during the
 WebSocket upgrade. For example, a client sends:
 
 ```json
-{"op":"JOIN_CHAT"}
+{ "op": "JOIN_CHAT" }
 ```
 
 The authenticated client receives a `chat_joined` response followed by a
@@ -109,8 +109,7 @@ enters or leaves, followed by an updated `user_list`. Sending
 `{"op":"LOGOUT"}` over the authenticated socket revokes the session. The
 browser client served at `/` sends messages with
 `{"op":"SEND_MESSAGE","message":"Hello"}` and displays messages broadcast to
-all authenticated connections. A client can request the current list with
-`{"op":"USER_LIST"}`.
+all authenticated connections. User-list operations are not implemented.
 
 ## Tests
 
@@ -118,6 +117,9 @@ all authenticated connections. A client can request the current list with
 npm test
 npm run test:coverage
 ```
+
+The Sprint 1 execution environment, results, and requirement-to-test mapping
+are recorded in [the Sprint 1 test execution report](./docs/sprint-1-test-execution.md).
 
 ## Project planning
 
