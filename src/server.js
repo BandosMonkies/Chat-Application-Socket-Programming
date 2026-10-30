@@ -160,19 +160,26 @@ function sendJson(response, statusCode, payload, headers = {}) {
 
 async function readJsonBody(request) {
   const contentType = request.headers["content-type"];
-  if (!contentType?.toLowerCase().startsWith("application/json")) {
+  const mediaType = contentType?.split(";", 1)[0].trim().toLowerCase();
+  if (mediaType !== "application/json") {
     throw new AuthError(415, "Content-Type must be application/json.");
   }
 
   const chunks = [];
   let size = 0;
+  let exceedsLimit = false;
 
   for await (const chunk of request) {
     size += chunk.length;
     if (size > MAX_BODY_BYTES) {
-      throw new AuthError(413, "Request body is too large.");
+      exceedsLimit = true;
+      continue;
     }
     chunks.push(chunk);
+  }
+
+  if (exceedsLimit) {
+    throw new AuthError(413, "Request body is too large.");
   }
 
   try {
@@ -330,6 +337,7 @@ async function handleHttpRequest(
 function parseSocketRequest(
   socket,
   raw,
+  isBinary,
   authService,
   webSocketServer,
   nextMessageTimestamp,
@@ -343,6 +351,16 @@ function parseSocketRequest(
 
   if (raw.length > MAX_SOCKET_FRAME_BYTES) {
     socket.close(1009, "Request is too large");
+    return;
+  }
+
+  if (isBinary) {
+    socket.send(
+      JSON.stringify({
+        ok: false,
+        error: "Binary WebSocket frames are not supported.",
+      }),
+    );
     return;
   }
 
@@ -407,7 +425,7 @@ function parseSocketRequest(
     }
 
     const message = request.message.trim();
-    if (message.length > 2000) {
+    if ([...message].length > 2000) {
       socket.send(
         JSON.stringify({ ok: false, error: "Message must be 2000 characters or fewer." }),
       );
@@ -526,10 +544,11 @@ export function createAppServer({
   });
 
   webSocketServer.on("connection", (socket) => {
-    socket.on("message", (raw) => {
+    socket.on("message", (raw, isBinary) => {
       parseSocketRequest(
         socket,
         raw,
+        isBinary,
         authService,
         webSocketServer,
         nextMessageTimestamp,

@@ -13,6 +13,9 @@ User presence is not exposed as a separate operation.
 - Usernames are case-insensitive, 3-32 characters, and may contain letters,
   digits, and underscores.
 - Passwords must be 8-128 UTF-8 bytes. They are stored as salted scrypt hashes.
+- Authentication endpoints accept JSON objects with an `application/json`
+  media type and request bodies up to 16 KiB. Chat messages are trimmed and
+  limited to 2,000 Unicode code points; binary WebSocket frames are rejected.
 - Accounts are persisted in `data/users.json`. Session tokens are random,
   server-side, expire after 12 hours, and are invalidated by logout or restart.
 - This account/session store is for the single-process project implementation.
@@ -122,6 +125,8 @@ npm run test:coverage
 
 The Sprint 1 execution environment, results, and requirement-to-test mapping
 are recorded in [the Sprint 1 test execution report](./docs/sprint-1-test-execution.md).
+Issue 11 input-validation cases and their execution results are recorded in
+[the input-validation test report](./docs/issue-11-input-validation.md).
 
 ## Project planning
 

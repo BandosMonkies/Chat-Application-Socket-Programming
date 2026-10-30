@@ -55,15 +55,31 @@ function connectSocket(cookie) {
 
 function receiveJson(socket) {
   return new Promise((resolve, reject) => {
-    socket.once("message", (message) => {
+    const cleanup = () => {
+      socket.off("message", onMessage);
+      socket.off("close", onClose);
+      socket.off("error", onError);
+    };
+    const onMessage = (message) => {
+      cleanup();
       try {
         resolve(JSON.parse(message.toString()));
       } catch (error) {
         reject(error);
       }
-    });
-    socket.once("close", () => reject(new Error("WebSocket closed before reply")));
-    socket.once("error", reject);
+    };
+    const onClose = () => {
+      cleanup();
+      reject(new Error("WebSocket closed before reply"));
+    };
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+
+    socket.once("message", onMessage);
+    socket.once("close", onClose);
+    socket.once("error", onError);
   });
 }
 
@@ -156,18 +172,29 @@ test("persists accounts across server instances", async () => {
   assert.equal(response.status, 200);
 });
 
-test("rejects an invalid username or short password", async () => {
-  const invalidUsernameResponse = await postJson("/api/auth/register", {
-    username: "not valid",
-    password: "correct-horse",
-  });
-  const shortPasswordResponse = await postJson("/api/auth/register", {
-    username: "alice",
-    password: "short",
-  });
+test("rejects malformed registration payloads and invalid account fields", async () => {
+  const invalidBodies = [
+    "null",
+    "[]",
+    JSON.stringify({ password: "correct-horse" }),
+    JSON.stringify({ username: 42, password: "correct-horse" }),
+    JSON.stringify({ username: "not valid", password: "correct-horse" }),
+    JSON.stringify({ username: "alice", password: 42 }),
+    JSON.stringify({ username: "alice", password: "short" }),
+    JSON.stringify({ username: "alice", password: "x".repeat(129) }),
+  ];
 
-  assert.equal(invalidUsernameResponse.status, 400);
-  assert.equal(shortPasswordResponse.status, 400);
+  for (const body of invalidBodies) {
+    const response = await request("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    assert.equal(response.status, 400, `Expected rejection for ${body}`);
+    const result = await response.json();
+    assert.equal(result.ok, false);
+    assert.equal(typeof result.error, "string");
+  }
 });
 
 test("validates password minimum length using UTF-8 bytes", async () => {
@@ -239,9 +266,32 @@ test("rejects malformed JSON and non-JSON registration requests", async () => {
     method: "POST",
     body: "username=alice",
   });
+  const spoofedContentTypeResponse = await request("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/jsonp" },
+    body: "{}",
+  });
 
   assert.equal(malformedResponse.status, 400);
   assert.equal(incorrectContentTypeResponse.status, 415);
+  assert.equal(spoofedContentTypeResponse.status, 415);
+});
+
+test("rejects oversized JSON bodies without interrupting the HTTP connection", async () => {
+  const response = await postJson("/api/auth/register", {
+    username: "alice",
+    password: "x".repeat(17_000),
+  });
+
+  assert.equal(response.status, 413);
+  assert.deepEqual(await response.json(), {
+    ok: false,
+    error: "Request body is too large.",
+  });
+
+  const healthResponse = await request("/health");
+  assert.equal(healthResponse.status, 200);
+  assert.deepEqual(await healthResponse.json(), { ok: true });
 });
 
 test("rejects cross-origin authentication requests", async () => {
@@ -446,6 +496,127 @@ test("rejects messages without valid recipients", async () => {
     });
   } finally {
     socket.close();
+  }
+});
+
+test("rejects malformed WebSocket payloads and recovers without delivering them", async () => {
+  for (const username of ["alice", "bob"]) {
+    await postJson("/api/auth/register", {
+      username,
+      password: "correct-horse",
+    });
+  }
+  const alice = await connectSocket(await login("alice"));
+  const bob = await connectSocket(await login("bob"));
+  const invalidFrames = [
+    { payload: "{", error: "Invalid JSON request." },
+    {
+      payload: "null",
+      error: "Request must be an object with an operation.",
+    },
+    {
+      payload: "[]",
+      error: "Request must be an object with an operation.",
+    },
+    {
+      payload: JSON.stringify({ op: 42 }),
+      error: "Request must be an object with an operation.",
+    },
+    {
+      payload: JSON.stringify({ op: "SEND_MESSAGE", message: "hello" }),
+      error: "At least one recipient is required.",
+    },
+    ...[
+      {
+        fields: { message: null, recipients: ["bob"] },
+        error: "Message cannot be empty.",
+      },
+      {
+        fields: { message: 42, recipients: ["bob"] },
+        error: "Message cannot be empty.",
+      },
+      {
+        fields: { message: "", recipients: ["bob"] },
+        error: "Message cannot be empty.",
+      },
+      {
+        fields: { message: " \t\n ", recipients: ["bob"] },
+        error: "Message cannot be empty.",
+      },
+      {
+        fields: { message: "x".repeat(2001), recipients: ["bob"] },
+        error: "Message must be 2000 characters or fewer.",
+      },
+      {
+        fields: { message: "hello", recipients: [] },
+        error: "At least one recipient is required.",
+      },
+      {
+        fields: { message: "hello", recipients: "bob" },
+        error: "At least one recipient is required.",
+      },
+      {
+        fields: { message: "hello", recipients: ["not valid"] },
+        error:
+          "Username must be 3-32 characters using letters, numbers, or underscores.",
+      },
+      {
+        fields: { message: "hello", recipients: [null] },
+        error:
+          "Username must be 3-32 characters using letters, numbers, or underscores.",
+      },
+    ].map(({ fields, error }) => ({
+      payload: JSON.stringify({ op: "SEND_MESSAGE", ...fields }),
+      error,
+    })),
+  ];
+
+  try {
+    for (const { payload, error } of invalidFrames) {
+      const responsePromise = receiveJson(alice);
+      alice.send(payload);
+      assert.deepEqual(await responsePromise, { ok: false, error });
+    }
+
+    const binaryResponsePromise = receiveJson(alice);
+    alice.send(
+      Buffer.from(JSON.stringify({ op: "JOIN_CHAT" })),
+      { binary: true },
+    );
+    assert.deepEqual(await binaryResponsePromise, {
+      ok: false,
+      error: "Binary WebSocket frames are not supported.",
+    });
+
+    const aliceMessagePromise = receiveJson(alice);
+    const bobMessagePromise = receiveJson(bob);
+    const message = "🙂".repeat(2000);
+    alice.send(
+      JSON.stringify({
+        op: "SEND_MESSAGE",
+        recipients: ["bob"],
+        message,
+      }),
+    );
+
+    assert.equal((await aliceMessagePromise).message, message);
+    assert.equal((await bobMessagePromise).message, message);
+
+    const rejectedMessagePromise = receiveJson(alice);
+    alice.send(
+      JSON.stringify({
+        op: "SEND_MESSAGE",
+        recipients: ["bob"],
+        message: "🙂".repeat(2001),
+      }),
+    );
+    assert.deepEqual(await rejectedMessagePromise, {
+      ok: false,
+      error: "Message must be 2000 characters or fewer.",
+    });
+  } finally {
+    alice.close();
+    bob.close();
   }
 });
 
