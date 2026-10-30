@@ -12,6 +12,8 @@ const recipientInput = document.querySelector("#recipient-input");
 const messageInput = document.querySelector("#message-input");
 const sendButton = document.querySelector(".send-button");
 const logoutButton = document.querySelector("#logout-button");
+const onlineCount = document.querySelector("#online-count");
+const onlineUsers = document.querySelector("#online-users");
 
 let authMode = "login";
 let username = "";
@@ -70,6 +72,26 @@ function addMessage(message) {
   messages.scrollTop = messages.scrollHeight;
 }
 
+function addActivity(message) {
+  emptyState?.remove();
+  const item = document.createElement("article");
+  item.className = "activity";
+  item.textContent = message;
+  messages.append(item);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function renderOnlineUsers(users) {
+  onlineCount.textContent = String(users.length);
+  onlineUsers.replaceChildren(
+    ...users.map((user) => {
+      const item = document.createElement("li");
+      item.textContent = user === username ? `${user} (you)` : user;
+      return item;
+    }),
+  );
+}
+
 function connect() {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   socket = new WebSocket(`${protocol}//${location.host}/chat`);
@@ -87,6 +109,12 @@ function connect() {
     const response = JSON.parse(data);
     if (response.event === "message") {
       addMessage(response);
+    } else if (response.event === "user_list") {
+      renderOnlineUsers(response.users);
+    } else if (response.event === "user_joined") {
+      addActivity(`${response.username} joined the chat.`);
+    } else if (response.event === "user_left") {
+      addActivity(`${response.username} left the chat.`);
     } else if (response.event === "chat_joined") {
       showStatus(chatStatus);
     } else if (response.message === "Logged out.") {

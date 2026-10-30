@@ -372,6 +372,19 @@ function parseSocketRequest(
   const operation = request.op.toUpperCase();
 
   if (operation === "JOIN_CHAT") {
+    const wasOnline = getUserSockets(webSocketServer, socket.chatSession.username).size > 0;
+    if (socket.chatJoined) {
+      socket.send(
+        JSON.stringify({
+          ok: true,
+          event: "user_list",
+          users: getOnlineUsers(webSocketServer),
+        }),
+      );
+      return;
+    }
+
+    socket.chatJoined = true;
     socket.send(
       JSON.stringify({
         ok: true,
@@ -379,6 +392,29 @@ function parseSocketRequest(
         username: socket.chatSession.username,
       }),
     );
+    socket.send(
+      JSON.stringify({
+        ok: true,
+        event: "user_list",
+        users: getOnlineUsers(webSocketServer),
+      }),
+    );
+    if (!wasOnline) {
+      broadcastToJoined(
+        webSocketServer,
+        {
+          ok: true,
+          event: "user_joined",
+          username: socket.chatSession.username,
+        },
+        socket,
+      );
+    }
+    broadcastToJoined(webSocketServer, {
+      ok: true,
+      event: "user_list",
+      users: getOnlineUsers(webSocketServer),
+    });
     return;
   }
 
@@ -470,8 +506,9 @@ function parseSocketRequest(
   if (operation === "USER_LIST") {
     socket.send(
       JSON.stringify({
-        ok: false,
-        error: "This chat operation is not implemented yet.",
+        ok: true,
+        event: "user_list",
+        users: getOnlineUsers(webSocketServer),
       }),
     );
     return;
@@ -480,6 +517,67 @@ function parseSocketRequest(
   socket.send(
     JSON.stringify({ ok: false, error: `Unknown operation: ${operation}` }),
   );
+}
+
+function getUserSockets(webSocketServer, username) {
+  const sockets = new Set();
+  for (const client of webSocketServer.clients) {
+    if (
+      client.readyState === WebSocket.OPEN &&
+      client.chatJoined &&
+      client.chatSession.username === username
+    ) {
+      sockets.add(client);
+    }
+  }
+  return sockets;
+}
+
+function getOnlineUsers(webSocketServer) {
+  return [...new Set(
+    [...webSocketServer.clients]
+      .filter(
+        (client) =>
+          client.readyState === WebSocket.OPEN &&
+          client.chatJoined,
+      )
+      .map((client) => client.chatSession.username),
+  )].sort();
+}
+
+function broadcastToJoined(webSocketServer, message, excludedSocket = null) {
+  const payload = JSON.stringify(message);
+  for (const client of webSocketServer.clients) {
+    if (
+      client !== excludedSocket &&
+      client.readyState === WebSocket.OPEN &&
+      client.chatJoined
+    ) {
+      client.send(payload);
+    }
+  }
+}
+
+function removeSocketFromChat(socket, webSocketServer) {
+  if (!socket.chatJoined) {
+    return;
+  }
+
+  socket.chatJoined = false;
+  const username = socket.chatSession.username;
+  const remainingSockets = getUserSockets(webSocketServer, username);
+  if (remainingSockets.size === 0) {
+    broadcastToJoined(webSocketServer, {
+      ok: true,
+      event: "user_left",
+      username,
+    });
+  }
+  broadcastToJoined(webSocketServer, {
+    ok: true,
+    event: "user_list",
+    users: getOnlineUsers(webSocketServer),
+  });
 }
 
 export function createAppServer({
@@ -534,6 +632,9 @@ export function createAppServer({
         webSocketServer,
         nextMessageTimestamp,
       );
+    });
+    socket.once("close", () => {
+      removeSocketFromChat(socket, webSocketServer);
     });
   });
 

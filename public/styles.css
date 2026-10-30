@@ -30,6 +30,11 @@ input:focus { border-color: #78a9ff; box-shadow: 0 0 0 3px rgba(120, 169, 255, .
 .hidden { display: none; }
 .chat-panel { min-height: 660px; overflow: hidden; }
 .chat-header { justify-content: space-between; padding: 27px 30px; border-bottom: 1px solid #2b3a58; }
+.presence { padding: 15px 30px; border-bottom: 1px solid #2b3a58; background: rgba(15, 25, 43, .7); }
+.presence-heading { display: flex; justify-content: space-between; color: #b7c3d8; font-size: 13px; }
+.presence-heading span { color: #80aaff; font-weight: 800; }
+.online-users { display: flex; flex-wrap: wrap; gap: 7px; padding: 10px 0 0; margin: 0; list-style: none; }
+.online-users li { padding: 5px 9px; border: 1px solid #334667; border-radius: 999px; color: #c9d5ea; background: #182743; font-size: 12px; }
 .header-actions { gap: 18px; }
 .connection { color: #8e9bb2; font-size: 12px; }
 .status-dot { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: #f0b455; }
@@ -45,9 +50,10 @@ input:focus { border-color: #78a9ff; box-shadow: 0 0 0 3px rgba(120, 169, 255, .
 .message-meta { margin-bottom: 4px; color: #91b6f5; font-size: 11px; font-weight: 700; }
 .message-time { margin-left: 8px; color: #8190aa; font-size: 10px; font-weight: 500; }
 .message-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
+.activity { align-self: center; color: #8190aa; font-size: 12px; }
 .composer { display: flex; gap: 10px; padding: 18px 30px 2px; border-top: 1px solid #2b3a58; }
 .composer input { flex: 1; }
 .composer input:first-of-type { flex: 0 1 190px; }
 .send-button { width: 48px; border-radius: 9px; font-size: 22px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
-@media (max-width: 540px) { .auth-panel { padding: 28px 22px; } .chat-header, .messages, .composer { padding-left: 18px; padding-right: 18px; } .chat-header { align-items: flex-start; gap: 12px; } .header-actions { flex-direction: column-reverse; align-items: flex-end; gap: 8px; } }
+@media (max-width: 540px) { .auth-panel { padding: 28px 22px; } .chat-header, .presence, .messages, .composer { padding-left: 18px; padding-right: 18px; } .chat-header { align-items: flex-start; gap: 12px; } .header-actions { flex-direction: column-reverse; align-items: flex-end; gap: 8px; } }

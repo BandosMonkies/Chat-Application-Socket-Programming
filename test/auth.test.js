@@ -67,6 +67,32 @@ function receiveJson(socket) {
   });
 }
 
+function receiveMessages(socket, count) {
+  return new Promise((resolve, reject) => {
+    const messages = [];
+    const timer = setTimeout(() => {
+      socket.removeListener("message", onMessage);
+      reject(new Error("Timed out waiting for WebSocket messages"));
+    }, 5000);
+    function onMessage(message) {
+      try {
+        messages.push(JSON.parse(message.toString()));
+      } catch (error) {
+        clearTimeout(timer);
+        socket.removeListener("message", onMessage);
+        reject(error);
+        return;
+      }
+      if (messages.length === count) {
+        clearTimeout(timer);
+        socket.removeListener("message", onMessage);
+        resolve(messages);
+      }
+    }
+    socket.on("message", onMessage);
+  });
+}
+
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "chat-auth-test-"));
   app = await startServer({
@@ -477,6 +503,79 @@ test("sequential messages have chronological timestamps and preserve order", asy
     );
   } finally {
     socket.close();
+  }
+});
+
+test("tracks online users and broadcasts join and leave events", async () => {
+  await postJson("/api/auth/register", {
+    username: "alice",
+    password: "correct-horse",
+  });
+  await postJson("/api/auth/register", {
+    username: "bob",
+    password: "correct-horse",
+  });
+  const aliceSocket = await connectSocket(await login("alice"));
+  const bobSocket = await connectSocket(await login("bob"));
+
+  try {
+    const aliceJoinResponses = receiveMessages(aliceSocket, 2);
+    aliceSocket.send(JSON.stringify({ op: "JOIN_CHAT" }));
+    const [aliceJoinResponse, aliceListResponse] = await aliceJoinResponses;
+    assert.deepEqual(aliceJoinResponse, {
+      ok: true,
+      event: "chat_joined",
+      username: "alice",
+    });
+    assert.deepEqual(aliceListResponse, {
+      ok: true,
+      event: "user_list",
+      users: ["alice"],
+    });
+
+    const aliceJoinEvents = receiveMessages(aliceSocket, 2);
+    const bobJoinResponses = receiveMessages(bobSocket, 2);
+    bobSocket.send(JSON.stringify({ op: "JOIN_CHAT" }));
+
+    const [bobJoinResponse, bobListResponse] = await bobJoinResponses;
+    assert.deepEqual(bobJoinResponse, {
+      ok: true,
+      event: "chat_joined",
+      username: "bob",
+    });
+    assert.deepEqual(bobListResponse, {
+      ok: true,
+      event: "user_list",
+      users: ["alice", "bob"],
+    });
+    const [aliceJoinEvent, aliceListEvent] = await aliceJoinEvents;
+    assert.deepEqual(aliceJoinEvent, {
+      ok: true,
+      event: "user_joined",
+      username: "bob",
+    });
+    assert.deepEqual(aliceListEvent, {
+      ok: true,
+      event: "user_list",
+      users: ["alice", "bob"],
+    });
+
+    const aliceLeaveEvents = receiveMessages(aliceSocket, 2);
+    bobSocket.terminate();
+    const [aliceLeaveEvent, aliceListAfterLeave] = await aliceLeaveEvents;
+    assert.deepEqual(aliceLeaveEvent, {
+      ok: true,
+      event: "user_left",
+      username: "bob",
+    });
+    assert.deepEqual(aliceListAfterLeave, {
+      ok: true,
+      event: "user_list",
+      users: ["alice"],
+    });
+  } finally {
+    aliceSocket.terminate();
+    bobSocket.terminate();
   }
 });
 

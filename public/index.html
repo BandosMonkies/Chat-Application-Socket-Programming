@@ -42,6 +42,13 @@
             <button id="logout-button" class="ghost-button" type="button">Log out</button>
           </div>
         </header>
+        <aside class="presence" aria-label="Online users">
+          <div class="presence-heading">
+            <strong>Online now</strong>
+            <span id="online-count">0</span>
+          </div>
+          <ul id="online-users" class="online-users"></ul>
+        </aside>
         <div id="messages" class="messages" aria-live="polite">
           <div id="empty-state" class="empty-state">
             <span class="empty-icon" aria-hidden="true">✦</span>

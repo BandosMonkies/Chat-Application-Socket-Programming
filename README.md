@@ -1,8 +1,8 @@
 # Real-Time Chat Application
 
 A Node.js chat application using WebSockets. The server owns account data,
-authentication, sessions, protected chat connections, and recipient routing.
-User presence is not exposed as a separate operation.
+authentication, sessions, protected chat connections, message delivery,
+recipient routing, and user presence.
 
 ## Stack and protocol
 
@@ -99,19 +99,17 @@ login. The server rejects a missing, expired, or revoked session during the
 WebSocket upgrade. For example, a client sends:
 
 ```json
-{"op":"JOIN_CHAT"}
+{ "op": "JOIN_CHAT" }
 ```
 
-The authenticated client receives a `chat_joined` response. Sending
+The authenticated client receives a `chat_joined` response followed by a
+`user_list` event containing the sorted usernames currently in the room.
+Connected clients receive `user_joined` and `user_left` events when a user
+enters or leaves, followed by an updated `user_list`. Sending
 `{"op":"LOGOUT"}` over the authenticated socket revokes the session. The
 browser client served at `/` sends messages with
-`{"op":"SEND_MESSAGE","recipients":["bob"],"message":"Hello"}`. The server
-delivers the message to the sender and connected authenticated sockets whose
-usernames appear in `recipients`; other connected users do not receive it.
-Recipients receive an event shaped like
-`{"ok":true,"event":"message","username":"alice","recipients":["bob"],"message":"Hello","sentAt":"..."}`.
-Recipient names are case-insensitive, duplicates are removed, and at least one
-valid recipient is required. User-list operations are not implemented.
+`{"op":"SEND_MESSAGE","message":"Hello"}` and displays messages broadcast to
+all authenticated connections. User-list operations are not implemented.
 
 ## Tests
 
