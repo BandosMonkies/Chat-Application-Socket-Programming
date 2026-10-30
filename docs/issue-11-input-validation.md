@@ -12,6 +12,7 @@
 | Test command | `npm run test:coverage` |
 | Result | **PASS** — 27 tests passed, 0 failed |
 | Coverage | 94.47% lines, 90.12% branches, 95.79% functions (all files) |
+| CI result | **PASS** — both PR #24 checks passed: [test](https://github.com/BandosMonkies/Chat-Application-Socket-Programming/actions/runs/41081869028) and [coverage](https://github.com/BandosMonkies/Chat-Application-Socket-Programming/actions/runs/41081843595) |
 
 Tests start a local HTTP/WebSocket server and use temporary account storage.
 No production service or user data was used.
@@ -32,7 +33,7 @@ No production service or user data was used.
 - No defects were found by this execution.
 - The coverage report includes the full project test suite; it is not a
   stand-alone measurement of issue 11 code.
-- CI has not yet been run for this branch.
+- No latency or load benchmark was part of this input-validation execution.
 
 ## Reproduction
 
