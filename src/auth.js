@@ -99,6 +99,7 @@ export class AuthService {
     const pendingWrite = this.accountWriteQueue.then(registerAccount);
     this.accountWriteQueue = pendingWrite.catch(() => {});
     await pendingWrite;
+    await this.accountStore.onUserCreated?.(username);
 
     return { username };
   }
@@ -128,6 +129,8 @@ export class AuthService {
     ) {
       throw new AuthError(401, "Invalid username or password.");
     }
+
+    await this.accountStore.onUserCreated?.(username);
 
     const token = randomBytes(32).toString("hex");
     const key = sessionKey(token);

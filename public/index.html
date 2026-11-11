@@ -10,13 +10,12 @@
     <main class="app-shell">
       <section id="auth-view" class="panel auth-panel">
         <div class="brand">
-          <span class="brand-mark" aria-hidden="true">•••</span>
           <div>
-            <p class="eyebrow">REAL-TIME CHAT</p>
+            <p class="eyebrow">SOCKET CHAT</p>
             <h1>Welcome back</h1>
           </div>
         </div>
-        <p class="intro">Sign in to join the protected chat room, or create an account to get started.</p>
+        <p class="intro">Sign in to keep your conversations private, or create an account to get started.</p>
         <div class="auth-tabs" role="tablist" aria-label="Authentication">
           <button class="tab active" type="button" data-mode="login">Log in</button>
           <button class="tab" type="button" data-mode="register">Register</button>
@@ -32,35 +31,34 @@
       </section>
 
       <section id="chat-view" class="panel chat-panel hidden">
-        <header class="chat-header">
-          <div>
-            <p class="eyebrow">PROTECTED ROOM</p>
-            <h1>Socket Chat</h1>
-          </div>
-          <div class="header-actions">
-            <span id="connection-status" class="connection"><span class="status-dot"></span>Connecting</span>
+        <aside class="chat-sidebar">
+          <header class="sidebar-header">
+            <div class="profile-avatar">Y</div>
+            <div class="sidebar-title"><p class="eyebrow">MESSAGES</p><h1>Chats</h1></div>
             <button id="logout-button" class="ghost-button" type="button">Log out</button>
-          </div>
-        </header>
-        <aside class="presence" aria-label="Online users">
-          <div class="presence-heading">
-            <strong>Online now</strong>
-            <span id="online-count">0</span>
-          </div>
-          <ul id="online-users" class="online-users"></ul>
+          </header>
+          <label class="search-label" for="user-search">Search chats</label>
+          <input id="user-search" class="search-input" placeholder="Search users..." autocomplete="off">
+          <ul id="chat-list" class="chat-list" aria-label="Your chats"></ul>
         </aside>
-        <div id="messages" class="messages" aria-live="polite">
-          <div id="empty-state" class="empty-state">
-            <span class="empty-icon" aria-hidden="true">✦</span>
-            <strong>Your conversation starts here</strong>
-            <span>Send a message to everyone in the room.</span>
+        <section class="conversation">
+          <header class="chat-header">
+            <div class="conversation-heading">
+              <div id="active-avatar" class="profile-avatar">?</div>
+              <div><p class="eyebrow">PRIVATE CHAT</p><h1 id="active-user">Select a chat</h1></div>
+            </div>
+            <span id="connection-status" class="connection"><span class="status-dot"></span>Connecting</span>
+          </header>
+          <div id="messages" class="messages" aria-live="polite">
+            <div id="empty-state" class="empty-state">
+              <strong>Choose a chat to start messaging</strong>
+              <span>Your conversations are saved securely.</span>
+            </div>
           </div>
-        </div>
+        </section>
         <form id="message-form" class="composer">
-          <label class="visually-hidden" for="recipient-input">Recipients</label>
-          <input id="recipient-input" placeholder="Recipients (comma-separated)" autocomplete="off" disabled required>
           <label class="visually-hidden" for="message-input">Message</label>
-          <input id="message-input" maxlength="2000" placeholder="Write a message..." autocomplete="off" disabled required>
+          <input id="message-input" maxlength="2000" placeholder="Select a chat first..." autocomplete="off" disabled required>
           <button class="send-button" type="submit" aria-label="Send message" disabled>↑</button>
         </form>
         <p id="chat-status" class="status" role="alert"></p>
