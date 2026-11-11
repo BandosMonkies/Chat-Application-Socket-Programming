@@ -2,7 +2,8 @@
 
 A Node.js chat application using WebSockets. The server owns account data,
 authentication, sessions, protected chat connections, message delivery,
-recipient routing, and user presence.
+recipient routing, and user presence. The browser presents a WhatsApp-style
+sidebar for selecting one-to-one conversations.
 
 ## Stack and protocol
 
@@ -16,7 +17,8 @@ recipient routing, and user presence.
 - Authentication endpoints accept JSON objects with an `application/json`
   media type and request bodies up to 16 KiB. Chat messages are trimmed and
   limited to 2,000 Unicode code points; binary WebSocket frames are rejected.
-- Accounts are persisted in `data/users.json`. Session tokens are random,
+- Accounts are persisted in `data/users.json`; users and one-to-one messages
+  are also persisted in SQLite at `data/chat.db`. Session tokens are random,
   server-side, expire after 12 hours, and are invalidated by logout or restart.
 - This account/session store is for the single-process project implementation.
   Use a shared database and session store before running multiple server
@@ -29,8 +31,9 @@ recipient routing, and user presence.
 npm ci
 ```
 
-Requires Node.js 20 or newer and npm. The `ws` package is the only runtime
-dependency; HTTP, cryptography, file storage, and testing use Node.js built-ins.
+Requires Node.js 20 or newer and npm. The `ws` and `sqlite3` packages are the
+runtime dependencies; HTTP, cryptography, file storage, and testing use
+Node.js built-ins.
 
 ## Run
 
@@ -40,6 +43,7 @@ npm start
 
 The server listens on `http://127.0.0.1:8765` by default. Set `HOST`, `PORT`,
 or `ACCOUNT_FILE` to override the listener or account-store location. Set
+`DATABASE_FILE` to override the SQLite database location. Set
 `NODE_ENV=production` when serving behind HTTPS so the session cookie includes
 the `Secure` attribute. Do not expose the development HTTP listener directly to
 an untrusted network.

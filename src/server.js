@@ -10,6 +10,7 @@ import {
   SESSION_COOKIE,
   normalizeUsername,
 } from "./auth.js";
+import { ChatDatabase } from "./database.js";
 
 const DEFAULT_HOST = process.env.HOST ?? "127.0.0.1";
 const DEFAULT_PORT = Number(process.env.PORT ?? 8765);
@@ -17,6 +18,7 @@ const MAX_BODY_BYTES = 16 * 1024;
 const MAX_SOCKET_FRAME_BYTES = 16 * 1024;
 const COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60;
 const PUBLIC_DIRECTORY = resolve(dirname(fileURLToPath(import.meta.url)), "..", "public");
+const DEFAULT_DATABASE_FILE = resolve("data", "chat.db");
 const STATIC_FILES = new Map([
   ["/", { name: "index.html", type: "text/html; charset=utf-8" }],
   ["/index.html", { name: "index.html", type: "text/html; charset=utf-8" }],
@@ -238,7 +240,7 @@ async function serveStaticFile(url, response) {
 async function handleHttpRequest(
   request,
   response,
-  { authService, secureCookies },
+  { authService, database, secureCookies },
 ) {
   const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
 
@@ -251,7 +253,11 @@ async function handleHttpRequest(
     return;
   }
 
-  if (!url.pathname.startsWith("/api/auth/")) {
+  if (
+    !url.pathname.startsWith("/api/auth/") &&
+    url.pathname !== "/api/users" &&
+    !url.pathname.startsWith("/api/chats/")
+  ) {
     sendJson(response, 404, { ok: false, error: "Not found." });
     return;
   }
@@ -262,6 +268,38 @@ async function handleHttpRequest(
   }
 
   try {
+    const session = getSessionFromRequest(request, authService);
+    if (request.method === "GET" && url.pathname === "/api/users") {
+      if (!session) {
+        sendJson(response, 401, { ok: false, error: "Authentication required." });
+        return;
+      }
+      sendJson(response, 200, {
+        ok: true,
+        users: await database.listUsers(session.username),
+      });
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname.startsWith("/api/chats/")) {
+      if (!session) {
+        sendJson(response, 401, { ok: false, error: "Authentication required." });
+        return;
+      }
+      const requestedUsername = decodeURIComponent(url.pathname.slice("/api/chats/".length));
+      const recipient = normalizeUsername(requestedUsername);
+      if (recipient === session.username || !(await database.listUsers(session.username)).includes(recipient)) {
+        sendJson(response, 404, { ok: false, error: "User not found." });
+        return;
+      }
+      sendJson(response, 200, {
+        ok: true,
+        username: recipient,
+        messages: await database.getConversation(session.username, recipient),
+      });
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/api/auth/register") {
       const body = await readJsonBody(request);
       const account = await authService.register(body.username, body.password);
@@ -334,12 +372,13 @@ async function handleHttpRequest(
   }
 }
 
-function parseSocketRequest(
+async function parseSocketRequest(
   socket,
   raw,
   isBinary,
   authService,
   webSocketServer,
+  database,
   nextMessageTimestamp,
 ) {
   const currentSession = authService.getSession(socket.chatSessionToken);
@@ -499,13 +538,23 @@ function parseSocketRequest(
       return;
     }
 
+    const sentAt = nextMessageTimestamp();
+    const sender = socket.chatSession.username;
+    for (const recipient of recipients) {
+      if (recipient !== sender && !(await database.listUsers(sender)).includes(recipient)) {
+        socket.send(JSON.stringify({ ok: false, error: "Recipient was not found." }));
+        return;
+      }
+      await database.saveMessage(sender, recipient, message, sentAt);
+    }
+
     const payload = JSON.stringify({
       ok: true,
       event: "message",
-      username: socket.chatSession.username,
+      username: sender,
       recipients,
       message,
-      sentAt: nextMessageTimestamp(),
+      sentAt,
     });
 
     for (const client of webSocketServer.clients) {
@@ -600,14 +649,18 @@ function removeSocketFromChat(socket, webSocketServer) {
 
 export function createAppServer({
   accountFile = resolve("data", "users.json"),
+  databaseFile = DEFAULT_DATABASE_FILE,
   sessionTtlMs,
   secureCookies = process.env.NODE_ENV === "production",
 } = {}) {
   const accountStore = new JsonAccountStore(accountFile);
+  const database = new ChatDatabase(databaseFile);
+  accountStore.onUserCreated = (username) => database.addUser(username);
   const authService = new AuthService({ accountStore, sessionTtlMs });
   const httpServer = createHttpServer((request, response) => {
-    void handleHttpRequest(request, response, { authService, secureCookies });
+    void handleHttpRequest(request, response, { authService, database, secureCookies });
   });
+  httpServer.once("close", () => database.close());
   const webSocketServer = new WebSocketServer({
     noServer: true,
     maxPayload: MAX_SOCKET_FRAME_BYTES,
@@ -642,15 +695,20 @@ export function createAppServer({
   });
 
   webSocketServer.on("connection", (socket) => {
+    socket.messageQueue = Promise.resolve();
     socket.on("message", (raw, isBinary) => {
-      parseSocketRequest(
+      socket.messageQueue = socket.messageQueue.then(() => parseSocketRequest(
         socket,
         raw,
         isBinary,
         authService,
         webSocketServer,
+        database,
         nextMessageTimestamp,
-      );
+      )).catch((error) => {
+        console.error("WebSocket request failed:", error);
+        socket.send(JSON.stringify({ ok: false, error: "The request could not be completed." }));
+      });
     });
     socket.once("close", () => {
       removeSocketFromChat(socket, webSocketServer);
@@ -659,6 +717,7 @@ export function createAppServer({
 
   return {
     authService,
+    database,
     httpServer,
     webSocketServer,
   };
@@ -668,9 +727,20 @@ export async function startServer({
   host = DEFAULT_HOST,
   port = DEFAULT_PORT,
   accountFile,
+  databaseFile,
   secureCookies,
 } = {}) {
-  const app = createAppServer({ accountFile, secureCookies });
+  const resolvedDatabaseFile =
+    databaseFile ??
+    (accountFile
+      ? resolve(dirname(accountFile), "chat.db")
+      : DEFAULT_DATABASE_FILE);
+  const app = createAppServer({
+    accountFile,
+    databaseFile: resolvedDatabaseFile,
+    secureCookies,
+  });
+  await app.database.open();
 
   await new Promise((resolveListen, rejectListen) => {
     app.httpServer.once("error", rejectListen);
@@ -688,11 +758,15 @@ const isMainModule =
   resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (isMainModule) {
-  startServer()
+  startServer({
+    accountFile: process.env.ACCOUNT_FILE,
+    databaseFile: process.env.DATABASE_FILE,
+  })
     .then(({ httpServer }) => {
       const address = httpServer.address();
       console.log(`Chat server listening on http://${address.address}:${address.port}`);
       console.log(`Account store: ${resolve(process.env.ACCOUNT_FILE ?? "data/users.json")}`);
+      console.log(`Database: ${resolve(process.env.DATABASE_FILE ?? "data/chat.db")}`);
     })
     .catch((error) => {
       console.error("Could not start the chat server:", error);

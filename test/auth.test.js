@@ -396,6 +396,96 @@ test("GET /api/auth/me requires a live authenticated session", async () => {
   });
 });
 
+test("protected user and chat routes require authentication", async () => {
+  const usersResponse = await request("/api/users");
+  const chatsResponse = await request("/api/chats/alice");
+
+  assert.equal(usersResponse.status, 401);
+  assert.deepEqual(await usersResponse.json(), {
+    ok: false,
+    error: "Authentication required.",
+  });
+  assert.equal(chatsResponse.status, 401);
+  assert.deepEqual(await chatsResponse.json(), {
+    ok: false,
+    error: "Authentication required.",
+  });
+});
+
+test("authenticated users can list users and load conversation history", async () => {
+  await postJson("/api/auth/register", {
+    username: "alice",
+    password: "correct-horse",
+  });
+  await postJson("/api/auth/register", {
+    username: "bob",
+    password: "correct-horse",
+  });
+  const aliceCookie = await login("alice");
+  const socket = await connectSocket(aliceCookie);
+
+  try {
+    const messageResponse = receiveJson(socket);
+    socket.send(
+      JSON.stringify({
+        op: "SEND_MESSAGE",
+        recipients: ["bob"],
+        message: "History check",
+      }),
+    );
+    assert.equal((await messageResponse).message, "History check");
+
+    const usersResponse = await request("/api/users", {
+      headers: { Cookie: aliceCookie },
+    });
+    const chatsResponse = await request("/api/chats/bob", {
+      headers: { Cookie: aliceCookie },
+    });
+    const chatsResult = await chatsResponse.json();
+
+    assert.equal(usersResponse.status, 200);
+    assert.deepEqual(await usersResponse.json(), {
+      ok: true,
+      users: ["bob"],
+    });
+    assert.equal(chatsResponse.status, 200);
+    assert.deepEqual(chatsResult, {
+      ok: true,
+      username: "bob",
+      messages: [
+        {
+          username: "alice",
+          recipient: "bob",
+          message: "History check",
+          sentAt: chatsResult.messages[0].sentAt,
+        },
+      ],
+    });
+    assert.match(chatsResult.messages[0].sentAt, /^\d{4}-\d{2}-\d{2}T/);
+  } finally {
+    socket.close();
+  }
+});
+
+test("authenticated users cannot load their own or unknown conversations", async () => {
+  await postJson("/api/auth/register", {
+    username: "alice",
+    password: "correct-horse",
+  });
+  const cookie = await login();
+
+  for (const username of ["alice", "missing"]) {
+    const response = await request(`/api/chats/${username}`, {
+      headers: { Cookie: cookie },
+    });
+    assert.equal(response.status, 404);
+    assert.deepEqual(await response.json(), {
+      ok: false,
+      error: "User not found.",
+    });
+  }
+});
+
 test("rejects WebSocket access without an authenticated session", async () => {
   await assert.rejects(connectSocket(null), /401/);
 });
@@ -807,6 +897,22 @@ test("WebSocket LOGOUT revokes its cookie session", async () => {
   }
 });
 
+test("logout rejects missing or invalid sessions and clears the cookie", async () => {
+  for (const cookie of [undefined, `${SESSION_COOKIE}=${"a".repeat(64)}`]) {
+    const response = await request("/api/auth/logout", {
+      method: "POST",
+      ...(cookie ? { headers: { Cookie: cookie } } : {}),
+    });
+
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), {
+      ok: false,
+      error: "Authentication required.",
+    });
+    assert.match(response.headers.get("set-cookie"), /Max-Age=0/);
+  }
+});
+
 test("expired sessions cannot access HTTP or WebSocket protected features", async () => {
   await postJson("/api/auth/register", {
     username: "alice",
@@ -851,4 +957,136 @@ test("unimplemented administrative operations are not exposed", async () => {
   });
 
   assert.equal(response.status, 404);
+});
+
+test("authentication responses disable caching and prevent MIME sniffing", async () => {
+  const response = await postJson("/api/auth/register", {
+    username: "alice",
+    password: "correct-horse",
+  });
+
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.match(response.headers.get("content-type"), /application\/json/);
+});
+
+test("unknown routes and unsupported methods return not found", async () => {
+  const unknownResponse = await request("/api/unknown");
+  const unsupportedResponse = await request("/api/auth/register", {
+    method: "GET",
+  });
+
+  for (const response of [unknownResponse, unsupportedResponse]) {
+    assert.equal(response.status, 404);
+    assert.deepEqual(await response.json(), {
+      ok: false,
+      error: "Not found.",
+    });
+  }
+});
+
+test("rejects malformed chat usernames and encoded path traversal attempts", async () => {
+  await postJson("/api/auth/register", {
+    username: "alice",
+    password: "correct-horse",
+  });
+  const cookie = await login();
+
+  for (const path of ["/api/chats/no", "/api/chats/%2e%2e%2fusers"]) {
+    const response = await request(path, { headers: { Cookie: cookie } });
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).ok, false);
+  }
+});
+
+test("JOIN_CHAT is idempotent and USER_LIST reports joined users", async () => {
+  await postJson("/api/auth/register", {
+    username: "alice",
+    password: "correct-horse",
+  });
+  await postJson("/api/auth/register", {
+    username: "bob",
+    password: "correct-horse",
+  });
+  const alice = await connectSocket(await login("alice"));
+  const bob = await connectSocket(await login("bob"));
+
+  try {
+    const firstJoin = receiveMessages(alice, 2);
+    alice.send(JSON.stringify({ op: "JOIN_CHAT" }));
+    await firstJoin;
+
+    const bobJoin = receiveMessages(bob, 2);
+    const bobPresence = receiveMessages(alice, 2);
+    bob.send(JSON.stringify({ op: "JOIN_CHAT" }));
+    await bobJoin;
+    assert.deepEqual(await bobPresence, [
+      { ok: true, event: "user_joined", username: "bob" },
+      { ok: true, event: "user_list", users: ["alice", "bob"] },
+    ]);
+
+    const repeatedJoin = receiveJson(alice);
+    alice.send(JSON.stringify({ op: "JOIN_CHAT" }));
+    assert.deepEqual(await repeatedJoin, {
+      ok: true,
+      event: "user_list",
+      users: ["alice", "bob"],
+    });
+
+    const userList = receiveJson(alice);
+    alice.send(JSON.stringify({ op: "USER_LIST" }));
+    assert.deepEqual(await userList, {
+      ok: true,
+      event: "user_list",
+      users: ["alice", "bob"],
+    });
+  } finally {
+    alice.terminate();
+    bob.terminate();
+  }
+});
+
+test("rejects unknown operations and directs socket auth operations to HTTP", async () => {
+  await postJson("/api/auth/register", {
+    username: "alice",
+    password: "correct-horse",
+  });
+  const socket = await connectSocket(await login());
+
+  try {
+    for (const [op, error] of [
+      ["NO_SUCH_OPERATION", "Unknown operation: NO_SUCH_OPERATION"],
+      ["REGISTER", "Use the /api/auth/register and /api/auth/login HTTP endpoints."],
+      ["LOGIN", "Use the /api/auth/register and /api/auth/login HTTP endpoints."],
+    ]) {
+      const response = receiveJson(socket);
+      socket.send(JSON.stringify({ op }));
+      assert.deepEqual(await response, { ok: false, error });
+    }
+  } finally {
+    socket.terminate();
+  }
+});
+
+test("rejects a message to an unknown user without delivering it", async () => {
+  await postJson("/api/auth/register", {
+    username: "alice",
+    password: "correct-horse",
+  });
+  const socket = await connectSocket(await login());
+
+  try {
+    const response = receiveJson(socket);
+    socket.send(JSON.stringify({
+      op: "SEND_MESSAGE",
+      recipients: ["missing"],
+      message: "Should not be delivered",
+    }));
+    assert.deepEqual(await response, {
+      ok: false,
+      error: "Recipient was not found.",
+    });
+  } finally {
+    socket.terminate();
+  }
 });
