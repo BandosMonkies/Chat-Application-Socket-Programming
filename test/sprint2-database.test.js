@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { rm } from "node:fs/promises";
+import { join } from "node:path";
 import test from "node:test";
 import { startServer } from "../src/server.js";
 import {
@@ -28,8 +29,8 @@ test("TC-07 database persistence survives server restart", async () => {
     assert.equal(sent.message, "Persist this message");
     socket.close();
 
-    const databaseFile = `${fixture.directory}\\chat.db`;
-    const accountFile = `${fixture.directory}\\users.json`;
+    const databaseFile = join(fixture.directory, "chat.db");
+    const accountFile = join(fixture.directory, "users.json");
     await fixture.close(false);
     const restarted = await startServer({
       host: "127.0.0.1",
