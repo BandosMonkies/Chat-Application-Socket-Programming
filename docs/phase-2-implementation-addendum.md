@@ -58,6 +58,12 @@ for [issue #11](https://github.com/BandosMonkies/Chat-Application-Socket-Program
 
 ## Requirement and test traceability
 
+The complete Sprint 2 execution record and updated SRS matrix are documented
+in [the Sprint 2 test execution report](./sprint-2-test-execution.md). It
+records actual exit codes, frontend/browser evidence, SQLite persistence,
+concurrency measurements, security results, and remaining dependency/coverage
+gaps.
+
 | Requirement / planned test | Implemented behavior and evidence | Status / limitation |
 |---|---|---|
 | FR-17, FR-18, NFR-09, SEC-02; TC-09, TC-12, SV-02 | Rejects empty/invalid messages and malformed account/message input; issue 11 adds negative and recovery tests. See [issue 11 test report](./issue-11-input-validation.md). | The issue 11 PR is open for review. Its CI checks pass; merge it before treating its additions as part of `main`. |

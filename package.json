@@ -9,10 +9,14 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test",
-    "test:coverage": "node --experimental-test-coverage --test"
+    "test:coverage": "node --experimental-test-coverage --test",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "sqlite3": "^5.1.7",
     "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0"
   }
 }
